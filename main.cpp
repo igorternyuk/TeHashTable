@@ -1,4 +1,5 @@
 #include "hashtable.hpp"
+#include "hash_utils.hpp"
 #include "point.hpp"
 #include <iostream>
 #include <ctime>
@@ -59,6 +60,7 @@ int main()
     hash_table[185] = "Igor Olexandrovutch Ternyuk";
     std::cout << "ht185 = " << hash_table[185] << std::endl;
 
+
     std::cout << "******* Hash table iterator ********" << std::endl;
     HashTableIterator<int, std::string> cursor(hash_table);
     cursor.reset();
@@ -69,6 +71,48 @@ int main()
             cursor.setValue("Ingvarr");
         std::cout << "(" << cursor.getData().key << "," << cursor.getData().value << ")" << std::endl;
     }
+
+    std::cout << "Open adressing hash-table" << std::endl;
+    OpenAddressingHashTable<std::string, double> oaht(10, &hash_string2,
+                                                      CollisionResolutionMethod::QUADRATIC_PROBING,
+                                                      &hash_sedgwick);
+    oaht.print();
+    oaht.insert("Afanasiev", 80);
+    oaht.insert("Baranov", 90);
+    oaht.insert("Chechin", 96);
+    oaht.insert("Sumskoi", 110);
+    oaht.insert("IgorTernyuk", 109.7);
+    oaht.insert("Robak", 98);
+    oaht.insert("Willy_Khappasalo", 112.65);
+    oaht.insert("Emelianenko", 108);
+    oaht.insert("KlitschkoW", 110);
+    oaht.insert("KlitschkoV", 113);
+    oaht.insert("Travnikov", 130);
+    oaht.insert("Lewis", 116);
+    oaht.insert("Tyson", 109);
+    oaht.insert("Valuev", 144);
+    oaht.insert("Virastyuk", 157);
+    oaht.insert("Savitskas", 175);
+    oaht.insert("Isaenko", 100);
+    oaht.insert("AntonTe", 68);
+    oaht.insert("DerekBanas", 80);
+    oaht.insert("Poddubniy", 125);
+    oaht.insert("Zhabotinskiy", 154);
+    oaht.insert("Vlasov", 135);
+    std::cout << "*****" << std::endl;
+    oaht.print();
+    std::cout << "Fill factor = " << oaht.getFillFactor() << std::endl;
+
+    double weight = 0;
+    if(oaht.find("Valuev", weight))
+        std::cout << "Valuev's weight is " << weight << " kg." << std::endl;
+    oaht.remove("Sumskoi");
+    oaht.update("Tyson", 110);
+    std::cout << "Weight of Lewis is " << oaht.get("Lewis") << std::endl;
+    oaht["Savitskas"] = 120;
+    oaht["Varfolomei"] = 60;
+    std::cout << "Tyson weight is " << oaht["Tyson"] << std::endl;
+    oaht.print();
 
     return 0;
 }

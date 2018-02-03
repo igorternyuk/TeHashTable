@@ -6,38 +6,9 @@
 #include <iostream>
 #include "array_list.hpp"
 #include "singly_linked_list.hpp"
+#include "hash_utils.hpp"
 
-inline bool isPrime(size_t number)
-{
-    if((number % 2 == 0 && number != 2) || (number % 3 == 0 && number != 3))
-        return false;
-    for(size_t i = 1; 36 * i * i - 12 * i < number; ++i)
-    {
-        if(number % (6 * i + 1) == 0 || number % (6 * i - 1) == 0)
-            return false;
-    }
-    return true;
-}
 
-inline bool isPrime2(size_t number){
-
-    if(number == 0) return false;
-    if(number ==  1 || number == 2) return true;
-    if(number % 2 == 0) return false;
-    for(size_t i = 3; i*i <= number; i += 2){
-        if(number % i == 0 ) return false;
-    }
-    return true;
-
-}
-
-inline size_t getPrimeNumberGreaterThan(size_t number)
-{
-    if(number % 2 == 0) ++number;
-    size_t i = number;
-    for(; !isPrime(i); i += 2);
-    return i;
-}
 
 template<class K, class V>
 class Map
@@ -58,6 +29,7 @@ public:
     virtual const V get(const K &key) const = 0;
 protected:
     size_t mCount {0u};
+    int test {0};
 };
 
 template<class K, class V>
@@ -87,12 +59,12 @@ public:
     const V operator[](const K &key) const;
     V& operator[](const K &key);
     virtual void print() const;
-
+protected:
+    using Map<K,V>::mCount;
 private:
 
     Array<LinkedList<Pair<K,V>>> mBuckets;
     std::function<size_t(const K &key, size_t max)> mHashFunction;
-    size_t mCount {0u};
     auto findPosition(const K &key) const;
     template<class Key, class Value>
     friend class HashTableIterator;
@@ -101,7 +73,7 @@ private:
 template<class K, class V>
 HashTable<K,V>::HashTable(size_t bucketsNumber,
                           std::function<size_t(const K &, size_t max)> hf):
-    mBuckets(getPrimeNumberGreaterThan(bucketsNumber)), mHashFunction(hf)
+    Map<K,V>::Map(),mBuckets(getPrimeNumberGreaterThan(bucketsNumber)), mHashFunction(hf)
 {
     for(size_t i{0u}; i < mBuckets.capacity(); ++i)
         mBuckets.add(LinkedList<Pair<K,V>>());
@@ -214,7 +186,7 @@ template<class K, class V>
 const V HashTable<K,V>::get(const K &key) const
 {
     V val;
-    if(!find(key, val))
+    if(find(key, val))
         val = findPosition(key)->mData.value;
     return val;
 }
@@ -335,7 +307,6 @@ void HashTableIterator<K,V>::searchNextAvailableNode(size_t startIndex)
     }
 }
 
-
 //Open adressing
 
 enum class HashTableItemStatus
@@ -348,16 +319,246 @@ enum class HashTableItemStatus
 template<class K, class V>
 struct HashTableItem
 {
+    K key;
+    V value;
+    HashTableItemStatus status;
+};
 
+enum class CollisionResolutionMethod
+{
+    LINEAR_PROBING,
+    QUADRATIC_PROBING,
+    DOUBLE_HASHING
 };
 
 template<class K, class V>
-class OpenAddressingHashTable
+class OpenAddressingHashTable : public Map<K,V>
 {
 public:
-    explicit OpenAddressingHashTable(size_t size);
+    explicit OpenAddressingHashTable(size_t tableSize,
+                                     std::function<size_t(const K &key, size_t maxVal)> hf,
+                                     CollisionResolutionMethod probingType,
+                                     std::function<size_t(const K &key, size_t maxVal)> hf2);
+    OpenAddressingHashTable(const OpenAddressingHashTable<K,V> &other) = default;
+    OpenAddressingHashTable(OpenAddressingHashTable<K,V> &&other) = default;
+    OpenAddressingHashTable<K,V>& operator=(const OpenAddressingHashTable<K,V> &rhs) = default;
+    OpenAddressingHashTable<K,V>& operator=(OpenAddressingHashTable<K,V> &&rhs) = default;
+    //virtual ~OpenAddressingHashTable() {}
+    // Map interface
+    virtual void insert(const K &key, const V &value);
+    virtual void update(const K &key, const V &value);
+    virtual void remove(const K &key);
+    virtual bool find(const K &key, V &value) const;
+    virtual const V get(const K &key) const;
+    virtual void print() const noexcept;
+    V& operator[](const K &key);
+    const V operator[](const K &key) const;
+    void clear();
+//private:
+    Array<HashTableItem<K,V>> mData;
+    std::function<size_t(const K &key, size_t maxVal)> mHashFunction;
+    CollisionResolutionMethod mProbingType;
+    std::function<size_t(const K &key, size_t maxVal)> mHashFunction2;
+    size_t mNumberOfOcupied;
+    inline double getFillFactor() const noexcept { return double(mNumberOfOcupied) / mData.size(); }
+protected:
+    using Map<K,V>::mCount;
 private:
-
+    void insertIntoArray(Array<HashTableItem<K,V>> &targetArray, const K &key,
+                         const V &value);
+    bool has(const K &key, size_t &pos) const;
 };
+
+template<class K, class V>
+OpenAddressingHashTable<K,V>::OpenAddressingHashTable(size_t tableSize,
+                                                      std::function<size_t(const K &, size_t maxSize)> hf,
+                                                      CollisionResolutionMethod probingType,
+                                                      std::function<size_t(const K &key, size_t maxVal)> hf2):
+    Map<K,V>::Map(),mData(getPrimeNumberGreaterThan(2 * tableSize)), mHashFunction{hf},
+    mProbingType{probingType}, mHashFunction2{hf2}
+{
+    //HashTableItem<K,V> item = {K(),V(),HashTableItemStatus::EMPTY};
+    for(size_t i{0u}; i < mData.capacity(); ++i)
+        mData.add(HashTableItem<K,V>());
+
+}
+
+template<class K, class V>
+void OpenAddressingHashTable<K,V>::insert(const K &key, const V &value)
+{
+    insertIntoArray(mData, key, value);
+    ++mNumberOfOcupied;
+    if(getFillFactor() > 0.7f)
+    {
+        std::cout << "Hash table is 70% full" << std::endl;
+        Array<HashTableItem<K,V>> newData{2 * mData.capacity()};
+        for(size_t i{0u}; i < newData.capacity(); ++i)
+            newData.add(HashTableItem<K,V>());
+        for(size_t i{0u}; i < mData.size(); ++i)
+        {
+            if(mData[i].status == HashTableItemStatus::OCUPIED)
+            {
+                insertIntoArray(newData, mData[i].key, mData[i].value);
+            }
+        }
+        mData = newData;
+    }
+}
+
+template<class K, class V>
+bool OpenAddressingHashTable<K,V>::find(const K &key, V &value) const
+{
+    size_t pos{0};
+    if(has(key, pos))
+    {
+        value = mData[pos].value;
+        return true;
+    }
+    return false;
+}
+
+template<class K, class V>
+void OpenAddressingHashTable<K,V>::update(const K &key, const V &value)
+{
+    size_t pos{0};
+    if(has(key, pos))
+        mData[pos].value = value;
+}
+
+template<class K, class V>
+void OpenAddressingHashTable<K,V>::remove(const K &key)
+{
+    size_t pos{0};
+    if(has(key, pos))
+    {
+        mData[pos].status = HashTableItemStatus::DELETED;
+        --mNumberOfOcupied;
+    }
+}
+
+template<class K, class V>
+const V OpenAddressingHashTable<K, V>::get(const K &key) const
+{
+    V v;
+    size_t pos{0};
+    auto isFound = has(key, pos);
+    return isFound ? mData[pos].value: v;
+}
+
+template<class K, class V>
+void OpenAddressingHashTable<K,V>::print() const noexcept
+{
+    for(size_t i{0u}; i < mData.capacity(); ++i)
+    {
+        std::cout << "| " << i <<  " | =(" << mData[i].key << "," << mData[i].value << ",";
+       // auto status = mData[i].status;
+        switch(auto status = mData[i].status)
+        {
+        case HashTableItemStatus::OCUPIED:
+            std::cout << "Occupied";
+            break;
+        case HashTableItemStatus::EMPTY:
+            std::cout << "Empty";
+            break;
+        case HashTableItemStatus::DELETED:
+            std::cout << "Deleted";
+            break;
+        }
+        std::cout << ") |" << std::endl;
+    }
+    std::cout << std::endl;
+}
+
+template<class K, class V>
+void OpenAddressingHashTable<K,V>::insertIntoArray(
+        Array<HashTableItem<K,V>> &targetArray, const K &key,const V &value)
+{
+    auto targetIndex = mHashFunction(key, targetArray.size());
+    size_t numOfProbe {0u};
+    while(targetArray[targetIndex].status == HashTableItemStatus::OCUPIED)
+    {
+        std::cout << std::endl << "Collision detected for index = " << targetIndex << std::endl;
+        size_t step{1};
+        switch(mProbingType)
+        {
+        case CollisionResolutionMethod::QUADRATIC_PROBING:
+            //h(k,i) = (h(k) + c1 * i + c2 * i * i) % m;
+            step = numOfProbe * numOfProbe / 2;
+            break;
+        case CollisionResolutionMethod::DOUBLE_HASHING:
+            //h(k,i) = (h1(k) + i * h2(k)) % m
+            // h2(k) and m are relatively primes
+            step = mHashFunction2(key, targetArray.size()) * numOfProbe;
+            break;
+        case CollisionResolutionMethod::LINEAR_PROBING:
+        default:
+            break;
+        }
+        targetIndex += step;
+        targetIndex %= targetArray.size();
+        ++numOfProbe;
+    }
+    targetArray[targetIndex] = {key, value, HashTableItemStatus::OCUPIED};
+}
+
+template<class K, class V>
+bool OpenAddressingHashTable<K, V>::has(const K &key, size_t &pos) const
+{
+    auto targetIndex = mHashFunction(key, mData.size());
+    size_t numOfProbe {0u};
+    while(true)
+    {
+        size_t step{1};
+        switch(mProbingType)
+        {
+        case CollisionResolutionMethod::QUADRATIC_PROBING:
+            //h(k,i) = (h(k) + c1 * i + c2 * i * i) % m;
+            step = numOfProbe * numOfProbe / 2;
+            break;
+        case CollisionResolutionMethod::DOUBLE_HASHING:
+            //h(k,i) = (h1(k) + i * h2(k)) % m
+            // h2(k) and m are relatively primes
+            step = mHashFunction2(key, mData.size()) * numOfProbe;
+            break;
+        case CollisionResolutionMethod::LINEAR_PROBING:
+        default:
+            break;
+        }
+        targetIndex += step;
+        targetIndex %= mData.size();
+        ++numOfProbe;
+        if(mData[targetIndex].status == HashTableItemStatus::EMPTY)
+            return false;
+        if(mData[targetIndex].status == HashTableItemStatus::OCUPIED &&
+           mData[targetIndex].key == key)
+        {
+            pos = targetIndex;
+            return true;
+        }
+    }
+    return false;
+}
+template<class K, class V>
+V& OpenAddressingHashTable<K, V>::operator[](const K &key)
+{
+    size_t pos{0};
+    if(!has(key, pos)) this->insert(key, V());
+    has(key, pos);
+    return mData[pos].value;
+}
+
+template<class K, class V>
+const V OpenAddressingHashTable<K, V>::operator[](const K &key) const
+{
+    return get(key);
+}
+
+template<class K, class V>
+void OpenAddressingHashTable<K, V>::clear()
+{
+    for(size_t i{0u}; i < mData.size(); ++i)
+        mData[i].status = HashTableItemStatus::EMPTY;
+}
+
 
 #endif // HASHTABLE_HPP

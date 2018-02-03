@@ -4,11 +4,11 @@ CONFIG -= app_bundle
 CONFIG -= qt
 
 SOURCES += main.cpp \
-    hash_functions.cpp
+    hash_utils.cpp
 
 HEADERS += \
     hashtable.hpp \
-    hash_functions.hpp \
     array_list.hpp \
     singly_linked_list.hpp \
-    point.hpp
+    point.hpp \
+    hash_utils.hpp
